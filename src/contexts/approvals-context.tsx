@@ -52,6 +52,7 @@ interface ApprovalsContextType {
   addApprovalHistory: (solutionId: string, history: ApprovalHistory) => void
   getSolutionApprovalHistory: (solutionId: string) => ApprovalHistory[]
   refreshApprovals: () => void
+  clearSolutions: () => void
 }
 
 const ApprovalsContext = createContext<ApprovalsContextType | undefined>(undefined)
@@ -192,14 +193,97 @@ const mockApprovals: Approval[] = [
 ]
 
 export function ApprovalsProvider({ children }: { children: ReactNode }) {
-  const [approvals, setApprovals] = useState<Approval[]>(mockApprovals)
-  const [solutions, setSolutions] = useState<Solution[]>(mockSolutions)
-  const [approvalHistory, setApprovalHistory] = useState<{ [solutionId: string]: ApprovalHistory[] }>({})
+  // Initialize approvals from localStorage or fall back to mock data
+  const [approvals, setApprovals] = useState<Approval[]>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('solution-shark-approvals')
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          // Convert date strings back to Date objects
+          return parsed.map((approval: any) => ({
+            ...approval,
+            submittedAt: new Date(approval.submittedAt),
+            processedAt: approval.processedAt ? new Date(approval.processedAt) : undefined
+          }))
+        } catch (error) {
+          console.error('Error parsing stored approvals:', error)
+        }
+      }
+    }
+    return mockApprovals
+  })
+  
+  // Initialize solutions from localStorage or fall back to mock data
+  const [solutions, setSolutions] = useState<Solution[]>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('solution-shark-solutions')
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          // Convert date strings back to Date objects
+          return parsed.map((solution: any) => ({
+            ...solution,
+            createdAt: new Date(solution.createdAt),
+            updatedAt: new Date(solution.updatedAt)
+          }))
+        } catch (error) {
+          console.error('Error parsing stored solutions:', error)
+        }
+      }
+    }
+    return mockSolutions
+  })
+  
+  const [approvalHistory, setApprovalHistory] = useState<{ [solutionId: string]: ApprovalHistory[] }>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('solution-shark-approval-history')
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          // Convert date strings back to Date objects
+          const history: { [solutionId: string]: ApprovalHistory[] } = {}
+          Object.keys(parsed).forEach(solutionId => {
+            history[solutionId] = parsed[solutionId].map((entry: any) => ({
+              ...entry,
+              submittedAt: new Date(entry.submittedAt),
+              processedAt: entry.processedAt ? new Date(entry.processedAt) : undefined
+            }))
+          })
+          return history
+        } catch (error) {
+          console.error('Error parsing stored approval history:', error)
+        }
+      }
+    }
+    return {}
+  })
   
   // Debug logging for solutions state changes
   useEffect(() => {
     console.log("ApprovalsProvider - solutions state:", solutions)
   }, [solutions])
+  
+  // Persist solutions to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('solution-shark-solutions', JSON.stringify(solutions))
+    }
+  }, [solutions])
+  
+  // Persist approvals to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('solution-shark-approvals', JSON.stringify(approvals))
+    }
+  }, [approvals])
+  
+  // Persist approval history to localStorage whenever it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('solution-shark-approval-history', JSON.stringify(approvalHistory))
+    }
+  }, [approvalHistory])
   
   // Initialize approval history from existing approvals (only once)
   useEffect(() => {
@@ -343,6 +427,32 @@ export function ApprovalsProvider({ children }: { children: ReactNode }) {
       ...prev,
       [solutionId]: [...(prev[solutionId] || []), history]
     }))
+    
+    // Also create a corresponding approval record
+    const solution = solutions.find(s => s.id === solutionId)
+    if (solution) {
+      const newApproval: Approval = {
+        id: history.id,
+        solutionId: solutionId,
+        solutionName: solution.name,
+        workflowId: history.workflowId,
+        workflowName: history.workflowName,
+        requesterName: history.submittedBy,
+        requesterEmail: 'user@example.com', // In real app, get from auth context
+        submittedAt: history.submittedAt,
+        status: history.status,
+        currentStep: history.currentStep || 'Initial Review',
+        stepOrder: history.stepOrder || 1,
+        totalSteps: 1, // In real app, get from workflow
+        assignedApprovers: ['user3'], // In real app, get from workflow
+        isAssignedToCurrentUser: true, // In real app, check current user
+        priority: 'medium', // In real app, determine based on solution value
+        estimatedValue: solution.estimatedValue,
+        currency: solution.currency || 'USD'
+      }
+      
+      setApprovals(prev => [...prev, newApproval])
+    }
   }
 
   const getSolutionApprovalHistory = (solutionId: string): ApprovalHistory[] => {
@@ -352,6 +462,15 @@ export function ApprovalsProvider({ children }: { children: ReactNode }) {
   const refreshApprovals = () => {
     // In real app, this would refetch from API
     setApprovals([...mockApprovals])
+  }
+
+  const clearSolutions = () => {
+    setSolutions([])
+    setApprovals([])
+    setApprovalHistory({})
+    localStorage.removeItem('solution-shark-solutions')
+    localStorage.removeItem('solution-shark-approvals')
+    localStorage.removeItem('solution-shark-approval-history')
   }
 
   return (
@@ -365,7 +484,8 @@ export function ApprovalsProvider({ children }: { children: ReactNode }) {
       createSolution,
       addApprovalHistory,
       getSolutionApprovalHistory,
-      refreshApprovals
+      refreshApprovals,
+      clearSolutions
     }}>
       {children}
     </ApprovalsContext.Provider>

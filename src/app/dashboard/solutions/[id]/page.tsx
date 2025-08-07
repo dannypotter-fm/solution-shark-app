@@ -113,13 +113,13 @@ function SolutionPage() {
 
 
   useEffect(() => {
-    // Initialize solution from mock data
-    const foundSolution = mockSolutions.find(s => s.id === params.id)
+    // Find solution from global context instead of local mock data
+    const foundSolution = solutions.find(s => s.id === params.id)
     if (foundSolution) {
       setSolution(foundSolution)
     }
     setIsInitialized(true)
-  }, [params.id])
+  }, [params.id, solutions])
 
   // Separate effect to sync solution stage with context
   useEffect(() => {
@@ -181,6 +181,9 @@ function SolutionPage() {
   const handleApprovalSubmit = (selectedWorkflows: ApprovalWorkflow[]) => {
     if (!solution) return
     
+    console.log('Submitting approvals for solution:', solution.id)
+    console.log('Selected workflows:', selectedWorkflows)
+    
     // Add new approval entries to history through context
     selectedWorkflows.forEach(workflow => {
       const historyEntry = {
@@ -193,11 +196,14 @@ function SolutionPage() {
         currentStep: workflow.steps?.[0]?.name || 'Initial Review',
         stepOrder: 1
       }
+      console.log('Creating approval history entry:', historyEntry)
       addApprovalHistory(solution.id, historyEntry)
     })
     
     // Update solution stage to 'review' when submitting for approval
     updateSolutionStage(solution.id, 'review', solution.stage)
+    
+    console.log('Approval submission complete')
   }
 
 

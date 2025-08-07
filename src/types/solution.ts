@@ -10,6 +10,7 @@ export interface Solution {
   currency?: string
   status: string
   description: string
+  projectType?: string
   resourceBreakdown?: string
   scopeOfWorksUrl?: string
   additionalInformation?: string
