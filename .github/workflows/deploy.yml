@@ -1,0 +1,96 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  NODE_VERSION: '20'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run linting
+        run: npm run lint
+      
+      - name: Build application
+        run: npm run build
+      
+      - name: Test build output
+        run: |
+          if [ ! -d "out" ]; then
+            echo "❌ Build failed - out directory not found"
+            exit 1
+          fi
+          echo "✅ Build successful"
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build application
+        run: npm run build
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Install AWS CDK
+        run: npm install -g aws-cdk
+      
+      - name: Setup CDK
+        run: |
+          cd infrastructure
+          npm ci
+          npm run build
+      
+      - name: Deploy to AWS
+        run: |
+          cd infrastructure
+          cdk deploy --require-approval never
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+      
+      - name: Get deployment outputs
+        run: |
+          cd infrastructure
+          cdk list-exports
+      
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "✅ Deployment completed successfully!"
+          echo "🌐 Application deployed to AWS"
+          echo "📊 Check CloudFormation console for details" 

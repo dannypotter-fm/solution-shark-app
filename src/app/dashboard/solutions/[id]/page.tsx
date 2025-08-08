@@ -15,6 +15,7 @@ import { Solution } from "@/types/solution"
 import { ApprovalSelectionModal } from "@/components/solutions/approval-selection-modal"
 import { ApprovalWorkflow } from "@/types/approval"
 import { useApprovals } from "@/contexts/approvals-context"
+import { generateApprovalId } from "@/lib/utils"
 
 // Mock data
 const mockUsers = [
@@ -107,6 +108,8 @@ function SolutionPage() {
   const [editValue, setEditValue] = useState("")
   const [selectedProjectTypes, setSelectedProjectTypes] = useState<string[]>(["Product"])
   const [isProjectTypeSelectorOpen, setIsProjectTypeSelectorOpen] = useState(false)
+  const [isSubmittingApproval, setIsSubmittingApproval] = useState(false)
+  const [submittedWorkflows, setSubmittedWorkflows] = useState<Set<string>>(new Set())
 
   // Get approval history from context
   const approvalHistory = solution ? getSolutionApprovalHistory(solution.id) : []
@@ -131,6 +134,14 @@ function SolutionPage() {
       }
     }
   }, [solutions, params.id])
+
+  // Initialize submitted workflows from existing approval history
+  useEffect(() => {
+    if (approvalHistory.length > 0) {
+      const existingWorkflowIds = new Set(approvalHistory.map(a => a.workflowId))
+      setSubmittedWorkflows(existingWorkflowIds)
+    }
+  }, [approvalHistory])
 
   const handleEditField = (field: string, currentValue: string) => {
     if (!isEditing) return
@@ -179,15 +190,29 @@ function SolutionPage() {
   }
 
   const handleApprovalSubmit = (selectedWorkflows: ApprovalWorkflow[]) => {
-    if (!solution) return
+    if (!solution || isSubmittingApproval) return
+    
+    setIsSubmittingApproval(true)
     
     console.log('Submitting approvals for solution:', solution.id)
     console.log('Selected workflows:', selectedWorkflows)
     
+    // Track submitted workflows to prevent duplicates
+    const newWorkflows = selectedWorkflows.filter(workflow => !submittedWorkflows.has(workflow.id))
+    
+    if (newWorkflows.length === 0) {
+      console.log('All selected workflows have already been submitted')
+      setIsSubmittingApproval(false)
+      return
+    }
+    
     // Add new approval entries to history through context
-    selectedWorkflows.forEach(workflow => {
+    newWorkflows.forEach((workflow, index) => {
+      // Generate unique ID using utility function to prevent React key conflicts
+      const uniqueId = generateApprovalId(workflow.id, index)
+      
       const historyEntry = {
-        id: `approval_${Date.now()}_${workflow.id}`,
+        id: uniqueId,
         workflowId: workflow.id,
         workflowName: workflow.name,
         status: 'pending' as const,
@@ -200,10 +225,18 @@ function SolutionPage() {
       addApprovalHistory(solution.id, historyEntry)
     })
     
+    // Update submitted workflows tracking
+    setSubmittedWorkflows(prev => new Set([...prev, ...newWorkflows.map(w => w.id)]))
+    
     // Update solution stage to 'review' when submitting for approval
     updateSolutionStage(solution.id, 'review', solution.stage)
     
     console.log('Approval submission complete')
+    
+    // Reset submission state after a short delay
+    setTimeout(() => {
+      setIsSubmittingApproval(false)
+    }, 1000)
   }
 
 
@@ -797,10 +830,15 @@ function SolutionPage() {
                       <Button 
                         className="w-full" 
                         onClick={() => setIsApprovalModalOpen(true)}
-                        disabled={solution.stage === 'approved'}
+                        disabled={solution.stage === 'approved' || isSubmittingApproval}
                       >
                         <CheckCircle className="mr-2 h-4 w-4" />
-                        {solution.stage === 'approved' ? 'Already Approved' : 'Submit for Approval'}
+                        {solution.stage === 'approved' 
+                          ? 'Already Approved' 
+                          : isSubmittingApproval 
+                          ? 'Submitting...' 
+                          : 'Submit for Approval'
+                        }
                       </Button>
                     </div>
 

@@ -1,0 +1,22 @@
+{
+  "name": "solution-shark-approvals-api",
+  "version": "1.0.0",
+  "description": "Approvals API Lambda function for SolutionShark",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/lib-dynamodb": "^3.0.0",
+    "@aws-lambda-powertools/logger": "^1.0.0",
+    "@aws-lambda-powertools/tracer": "^1.0.0",
+    "@aws-lambda-powertools/metrics": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+} 

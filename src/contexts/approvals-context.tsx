@@ -201,7 +201,7 @@ export function ApprovalsProvider({ children }: { children: ReactNode }) {
         try {
           const parsed = JSON.parse(stored)
           // Convert date strings back to Date objects
-          return parsed.map((approval: any) => ({
+          return parsed.map((approval: Approval) => ({
             ...approval,
             submittedAt: new Date(approval.submittedAt),
             processedAt: approval.processedAt ? new Date(approval.processedAt) : undefined
@@ -222,7 +222,7 @@ export function ApprovalsProvider({ children }: { children: ReactNode }) {
         try {
           const parsed = JSON.parse(stored)
           // Convert date strings back to Date objects
-          return parsed.map((solution: any) => ({
+          return parsed.map((solution: Solution) => ({
             ...solution,
             createdAt: new Date(solution.createdAt),
             updatedAt: new Date(solution.updatedAt)
@@ -244,7 +244,7 @@ export function ApprovalsProvider({ children }: { children: ReactNode }) {
           // Convert date strings back to Date objects
           const history: { [solutionId: string]: ApprovalHistory[] } = {}
           Object.keys(parsed).forEach(solutionId => {
-            history[solutionId] = parsed[solutionId].map((entry: any) => ({
+            history[solutionId] = parsed[solutionId].map((entry: ApprovalHistory) => ({
               ...entry,
               submittedAt: new Date(entry.submittedAt),
               processedAt: entry.processedAt ? new Date(entry.processedAt) : undefined
@@ -423,10 +423,21 @@ export function ApprovalsProvider({ children }: { children: ReactNode }) {
   }
 
   const addApprovalHistory = (solutionId: string, history: ApprovalHistory) => {
-    setApprovalHistory(prev => ({
-      ...prev,
-      [solutionId]: [...(prev[solutionId] || []), history]
-    }))
+    // Check if this approval already exists to prevent duplicates
+    setApprovalHistory(prev => {
+      const existingHistory = prev[solutionId] || []
+      const alreadyExists = existingHistory.some(h => h.id === history.id)
+      
+      if (alreadyExists) {
+        console.log('Approval already exists, skipping duplicate:', history.id)
+        return prev
+      }
+      
+      return {
+        ...prev,
+        [solutionId]: [...existingHistory, history]
+      }
+    })
     
     // Also create a corresponding approval record
     const solution = solutions.find(s => s.id === solutionId)
@@ -451,7 +462,15 @@ export function ApprovalsProvider({ children }: { children: ReactNode }) {
         currency: solution.currency || 'USD'
       }
       
-      setApprovals(prev => [...prev, newApproval])
+      // Check if approval already exists in approvals list
+      setApprovals(prev => {
+        const alreadyExists = prev.some(a => a.id === history.id)
+        if (alreadyExists) {
+          console.log('Approval already exists in approvals list, skipping duplicate:', history.id)
+          return prev
+        }
+        return [...prev, newApproval]
+      })
     }
   }
 
