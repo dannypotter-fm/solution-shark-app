@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AppSidebar } from '@/components/app-sidebar'
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { useApprovals } from '@/contexts/approvals-context'
 import { ArrowLeft, Save } from 'lucide-react'
@@ -74,9 +75,10 @@ export default function CreateSolutionPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <AppSidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+    <SidebarProvider>
+      <div className="flex h-screen bg-gray-50">
+        <AppSidebar />
+        <SidebarInset>
         {/* Header */}
         <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
           <div className="flex items-center justify-between">
@@ -238,7 +240,8 @@ export default function CreateSolutionPage() {
             </Card>
           </div>
         </main>
+        </SidebarInset>
       </div>
-    </div>
+    </SidebarProvider>
   )
 }

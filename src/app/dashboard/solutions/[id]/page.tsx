@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { AppSidebar } from '@/components/app-sidebar'
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { useApprovals } from '@/contexts/approvals-context'
 import { ApprovalSelectionModal } from '@/components/solutions/approval-selection-modal'
@@ -149,9 +150,10 @@ export default function SolutionPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <AppSidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+    <SidebarProvider>
+      <div className="flex h-screen bg-gray-50">
+        <AppSidebar />
+        <SidebarInset>
         {/* Header */}
         <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
           <div className="flex items-center justify-between">
@@ -292,15 +294,16 @@ export default function SolutionPage() {
             </Card>
           </div>
         </main>
+        </SidebarInset>
       </div>
 
       {/* Approval Selection Modal */}
-             <ApprovalSelectionModal
-         isOpen={isApprovalModalOpen}
-         onClose={() => setIsApprovalModalOpen(false)}
-         onApprovalSubmit={handleApprovalSubmit}
-         solution={solution}
-       />
-    </div>
+      <ApprovalSelectionModal
+        isOpen={isApprovalModalOpen}
+        onClose={() => setIsApprovalModalOpen(false)}
+        onApprovalSubmit={handleApprovalSubmit}
+        solution={solution}
+      />
+    </SidebarProvider>
   )
 } 
