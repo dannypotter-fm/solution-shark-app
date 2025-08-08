@@ -263,7 +263,7 @@ function ApprovalsContent() {
                               <div className="flex items-center gap-2">
                                 <Calendar className="h-4 w-4" />
                                 <span className="text-sm">
-                                  {approval.submittedAt.toLocaleDateString()}
+                                  {new Date(approval.submittedAt).toLocaleDateString()}
                                 </span>
                               </div>
                             </TableCell>

@@ -229,7 +229,7 @@ export default function ProfilePage() {
                       <div>
                         <p className="text-sm font-medium">Member Since</p>
                         <p className="text-sm text-muted-foreground">
-                          {mockUser.createdAt.toLocaleDateString()}
+                          {new Date(mockUser.createdAt).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
@@ -239,7 +239,7 @@ export default function ProfilePage() {
                       <div>
                         <p className="text-sm font-medium">Last Login</p>
                         <p className="text-sm text-muted-foreground">
-                          {mockUser.lastLoginAt?.toLocaleDateString() || "Never"}
+                          {mockUser.lastLoginAt ? new Date(mockUser.lastLoginAt).toLocaleDateString() : "Never"}
                         </p>
                       </div>
                     </div>

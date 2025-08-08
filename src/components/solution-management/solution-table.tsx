@@ -146,7 +146,7 @@ export function SolutionTable({ solutions, onArchive, filters, onFilterChange }:
                         {solution.status?.charAt(0)?.toUpperCase() + solution.status?.slice(1) || solution.status}
                       </Badge>
                     </TableCell>
-                    <TableCell>{solution.createdAt.toLocaleDateString()}</TableCell>
+                    <TableCell>{new Date(solution.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>{solution.createdBy}</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
