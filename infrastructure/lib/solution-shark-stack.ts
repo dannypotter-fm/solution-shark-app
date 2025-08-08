@@ -1,189 +1,245 @@
 import * as cdk from 'aws-cdk-lib';
-import { Construct } from 'constructs';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as apigateway from 'aws-cdk-lib/aws-apigateway';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import * as logs from 'aws-cdk-lib/aws-logs';
-import * as route53 from 'aws-cdk-lib/aws-route53';
-import * as certificatemanager from 'aws-cdk-lib/aws-certificatemanager';
-import * as targets from 'aws-cdk-lib/aws-route53-targets';
-import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
+import * as waf from 'aws-cdk-lib/aws-wafv2';
 import * as kms from 'aws-cdk-lib/aws-kms';
+import * as rds from 'aws-cdk-lib/aws-rds';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as amplify from 'aws-cdk-lib/aws-amplify';
+import { Construct } from 'constructs';
 
 export class SolutionSharkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // ============================================================================
-    // SECURITY & ENCRYPTION
-    // ============================================================================
-    
-    // KMS key for encryption
-    const encryptionKey = new kms.Key(this, 'SolutionSharkEncryptionKey', {
+    // Create KMS key for encryption
+    const kmsKey = new kms.Key(this, 'SolutionSharkKMSKey', {
       enableKeyRotation: true,
-      description: 'Encryption key for SolutionShark application data',
-      alias: 'alias/solution-shark-encryption',
+      description: 'KMS key for SolutionShark application encryption',
     });
 
-    // ============================================================================
-    // DATABASE - DynamoDB (Serverless, pay-per-request)
-    // ============================================================================
-    
-    const solutionsTable = new dynamodb.Table(this, 'SolutionsTable', {
-      tableName: 'solution-shark-solutions',
-      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // Cost-efficient for variable workloads
-      removalPolicy: cdk.RemovalPolicy.RETAIN, // Protect against accidental deletion
-      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
-      encryptionKey,
-      pointInTimeRecovery: true, // Enable PITR for data protection
-      timeToLiveAttribute: 'ttl', // Optional TTL for data lifecycle management
-    });
-
-    // GSI for efficient queries
-    solutionsTable.addGlobalSecondaryIndex({
-      indexName: 'stage-index',
-      partitionKey: { name: 'stage', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
-      projectionType: dynamodb.ProjectionType.ALL,
-    });
-
-    solutionsTable.addGlobalSecondaryIndex({
-      indexName: 'owner-index',
-      partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'updatedAt', type: dynamodb.AttributeType.STRING },
-      projectionType: dynamodb.ProjectionType.ALL,
-    });
-
-    const approvalsTable = new dynamodb.Table(this, 'ApprovalsTable', {
-      tableName: 'solution-shark-approvals',
-      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'solutionId', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
-      encryptionKey,
-      pointInTimeRecovery: true,
-    });
-
-    // GSI for approval queries
-    approvalsTable.addGlobalSecondaryIndex({
-      indexName: 'status-index',
-      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'submittedAt', type: dynamodb.AttributeType.STRING },
-      projectionType: dynamodb.ProjectionType.ALL,
-    });
-
-    const workflowsTable = new dynamodb.Table(this, 'WorkflowsTable', {
-      tableName: 'solution-shark-workflows',
-      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
-      encryptionKey,
-      pointInTimeRecovery: true,
-    });
-
-    // ============================================================================
-    // API LAYER - Lambda Functions (Serverless)
-    // ============================================================================
-    
-    // Common Lambda execution role
-    const lambdaExecutionRole = new iam.Role(this, 'LambdaExecutionRole', {
-      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+    // Create VPC for RDS
+    const vpc = new ec2.Vpc(this, 'SolutionSharkVPC', {
+      maxAzs: 2, // Cost optimization: use 2 AZs instead of 3
+      natGateways: 1, // Cost optimization: use 1 NAT gateway
+      subnetConfiguration: [
+        {
+          cidrMask: 24,
+          name: 'public',
+          subnetType: ec2.SubnetType.PUBLIC,
+        },
+        {
+          cidrMask: 24,
+          name: 'private',
+          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+        },
+        {
+          cidrMask: 28,
+          name: 'isolated',
+          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+        },
       ],
     });
 
-    // Grant DynamoDB permissions
-    solutionsTable.grantReadWriteData(lambdaExecutionRole);
-    approvalsTable.grantReadWriteData(lambdaExecutionRole);
-    workflowsTable.grantReadWriteData(lambdaExecutionRole);
+    // Create security group for RDS
+    const dbSecurityGroup = new ec2.SecurityGroup(this, 'SolutionSharkDBSecurityGroup', {
+      vpc,
+      description: 'Security group for SolutionShark PostgreSQL database',
+      allowAllOutbound: false,
+    });
 
-    // Solutions API Lambda
+    // Allow Lambda functions to connect to RDS
+    dbSecurityGroup.addIngressRule(
+      ec2.Peer.ipv4(vpc.vpcCidrBlock),
+      ec2.Port.tcp(5432),
+      'Allow Lambda functions to connect to PostgreSQL'
+    );
+
+    // Create RDS subnet group
+    const dbSubnetGroup = new rds.SubnetGroup(this, 'SolutionSharkDBSubnetGroup', {
+      vpc,
+      description: 'Subnet group for SolutionShark PostgreSQL database',
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+      },
+    });
+
+    // Create database credentials in Secrets Manager
+    const dbCredentials = new secretsmanager.Secret(this, 'SolutionSharkDBCredentials', {
+      secretName: 'solution-shark/db-credentials',
+      description: 'Database credentials for SolutionShark PostgreSQL',
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({ username: 'solution_shark_admin' }),
+        generateStringKey: 'password',
+        excludeCharacters: '"@/\\',
+        passwordLength: 32,
+      },
+    });
+
+    // Create PostgreSQL RDS instance (Aurora Serverless v2 for cost efficiency)
+    const dbCluster = new rds.DatabaseCluster(this, 'SolutionSharkDatabase', {
+      engine: rds.DatabaseClusterEngine.auroraPostgres({
+        version: rds.AuroraPostgresEngineVersion.VER_15_4,
+      }),
+      instanceProps: {
+        instanceType: ec2.InstanceType.of(ec2.InstanceClass.SERVERLESS, ec2.InstanceSize.SMALL),
+        vpc,
+        vpcSubnets: {
+          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+        },
+        securityGroups: [dbSecurityGroup],
+      },
+      instances: 1, // Single instance for cost optimization
+      storageEncrypted: true,
+      storageEncryptionKey: kmsKey,
+      backup: {
+        retention: cdk.Duration.days(7), // Cost optimization: 7 days retention
+        preferredWindow: '03:00-04:00',
+      },
+      deletionProtection: false, // For development - enable for production
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // For development - use RETAIN for production
+      credentials: rds.Credentials.fromSecret(dbCredentials),
+      vpc,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+      },
+      securityGroups: [dbSecurityGroup],
+      subnetGroup: dbSubnetGroup,
+      serverlessV2MinCapacity: 0.5, // Cost optimization: minimum 0.5 ACU
+      serverlessV2MaxCapacity: 2, // Cost optimization: maximum 2 ACU
+      enableDataApi: true, // Enable Data API for Lambda integration
+    });
+
+    // Create DynamoDB tables (keeping for compatibility)
+    const solutionsTable = new dynamodb.Table(this, 'SolutionsTable', {
+      tableName: 'solutions',
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      pointInTimeRecovery: true,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: kmsKey,
+    });
+
+    const approvalsTable = new dynamodb.Table(this, 'ApprovalsTable', {
+      tableName: 'approvals',
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      pointInTimeRecovery: true,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: kmsKey,
+    });
+
+    const workflowsTable = new dynamodb.Table(this, 'WorkflowsTable', {
+      tableName: 'workflows',
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      pointInTimeRecovery: true,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: kmsKey,
+    });
+
+    // Create Lambda functions with RDS access
     const solutionsLambda = new lambda.Function(this, 'SolutionsLambda', {
-      functionName: 'solution-shark-solutions-api',
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_18_X,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset('../src/api/solutions'),
-      timeout: cdk.Duration.seconds(30),
-      memorySize: 512,
+      code: lambda.Code.fromAsset('src/api/solutions'),
       environment: {
+        DB_CLUSTER_ARN: dbCluster.clusterArn,
+        DB_SECRET_ARN: dbCredentials.secretArn,
+        DB_NAME: 'solution_shark',
         SOLUTIONS_TABLE: solutionsTable.tableName,
         APPROVALS_TABLE: approvalsTable.tableName,
         WORKFLOWS_TABLE: workflowsTable.tableName,
-        POWERTOOLS_SERVICE_NAME: 'solutions-api',
-        LOG_LEVEL: 'INFO',
       },
-      role: lambdaExecutionRole,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
+      vpc,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+      },
+      securityGroups: [dbSecurityGroup],
     });
 
-    // Approvals API Lambda
     const approvalsLambda = new lambda.Function(this, 'ApprovalsLambda', {
-      functionName: 'solution-shark-approvals-api',
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_18_X,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset('../src/api/approvals'),
-      timeout: cdk.Duration.seconds(30),
-      memorySize: 512,
+      code: lambda.Code.fromAsset('src/api/approvals'),
       environment: {
+        DB_CLUSTER_ARN: dbCluster.clusterArn,
+        DB_SECRET_ARN: dbCredentials.secretArn,
+        DB_NAME: 'solution_shark',
         SOLUTIONS_TABLE: solutionsTable.tableName,
         APPROVALS_TABLE: approvalsTable.tableName,
         WORKFLOWS_TABLE: workflowsTable.tableName,
-        POWERTOOLS_SERVICE_NAME: 'approvals-api',
-        LOG_LEVEL: 'INFO',
       },
-      role: lambdaExecutionRole,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
+      vpc,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+      },
+      securityGroups: [dbSecurityGroup],
     });
 
-    // Workflows API Lambda
     const workflowsLambda = new lambda.Function(this, 'WorkflowsLambda', {
-      functionName: 'solution-shark-workflows-api',
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_18_X,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset('../src/api/workflows'),
-      timeout: cdk.Duration.seconds(30),
-      memorySize: 512,
+      code: lambda.Code.fromAsset('src/api/workflows'),
       environment: {
+        DB_CLUSTER_ARN: dbCluster.clusterArn,
+        DB_SECRET_ARN: dbCredentials.secretArn,
+        DB_NAME: 'solution_shark',
         SOLUTIONS_TABLE: solutionsTable.tableName,
         APPROVALS_TABLE: approvalsTable.tableName,
         WORKFLOWS_TABLE: workflowsTable.tableName,
-        POWERTOOLS_SERVICE_NAME: 'workflows-api',
-        LOG_LEVEL: 'INFO',
       },
-      role: lambdaExecutionRole,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
+      vpc,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+      },
+      securityGroups: [dbSecurityGroup],
     });
 
-    // ============================================================================
-    // API GATEWAY (Serverless)
-    // ============================================================================
-    
+    // Grant permissions to Lambda functions
+    dbCluster.grantDataApiAccess(solutionsLambda);
+    dbCluster.grantDataApiAccess(approvalsLambda);
+    dbCluster.grantDataApiAccess(workflowsLambda);
+    dbCredentials.grantRead(solutionsLambda);
+    dbCredentials.grantRead(approvalsLambda);
+    dbCredentials.grantRead(workflowsLambda);
+    solutionsTable.grantReadWriteData(solutionsLambda);
+    solutionsTable.grantReadWriteData(approvalsLambda);
+    solutionsTable.grantReadWriteData(workflowsLambda);
+    approvalsTable.grantReadWriteData(solutionsLambda);
+    approvalsTable.grantReadWriteData(approvalsLambda);
+    approvalsTable.grantReadWriteData(workflowsLambda);
+    workflowsTable.grantReadWriteData(solutionsLambda);
+    workflowsTable.grantReadWriteData(approvalsLambda);
+    workflowsTable.grantReadWriteData(workflowsLambda);
+
+    // Create API Gateway
     const api = new apigateway.RestApi(this, 'SolutionSharkAPI', {
-      restApiName: 'solution-shark-api',
-      description: 'SolutionShark API Gateway',
+      restApiName: 'SolutionShark API',
+      description: 'API for SolutionShark application',
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
-        allowHeaders: ['Content-Type', 'Authorization'],
-      },
-      deployOptions: {
-        stageName: 'prod',
-        loggingLevel: apigateway.MethodLoggingLevel.INFO,
-        dataTraceEnabled: false, // Disable for cost efficiency
-        metricsEnabled: true,
+        allowHeaders: ['Content-Type', 'X-Amz-Date', 'Authorization', 'X-Api-Key'],
       },
     });
 
-    // API Resources and Methods
+    // Add API resources and methods
     const solutionsResource = api.root.addResource('solutions');
     const approvalsResource = api.root.addResource('approvals');
     const workflowsResource = api.root.addResource('workflows');
@@ -191,94 +247,65 @@ export class SolutionSharkStack extends cdk.Stack {
     // Solutions endpoints
     solutionsResource.addMethod('GET', new apigateway.LambdaIntegration(solutionsLambda));
     solutionsResource.addMethod('POST', new apigateway.LambdaIntegration(solutionsLambda));
-    
-    const solutionResource = solutionsResource.addResource('{id}');
-    solutionResource.addMethod('GET', new apigateway.LambdaIntegration(solutionsLambda));
-    solutionResource.addMethod('PUT', new apigateway.LambdaIntegration(solutionsLambda));
-    solutionResource.addMethod('DELETE', new apigateway.LambdaIntegration(solutionsLambda));
+    solutionsResource.addResource('{id}').addMethod('GET', new apigateway.LambdaIntegration(solutionsLambda));
+    solutionsResource.addResource('{id}').addMethod('PUT', new apigateway.LambdaIntegration(solutionsLambda));
+    solutionsResource.addResource('{id}').addMethod('DELETE', new apigateway.LambdaIntegration(solutionsLambda));
 
     // Approvals endpoints
     approvalsResource.addMethod('GET', new apigateway.LambdaIntegration(approvalsLambda));
     approvalsResource.addMethod('POST', new apigateway.LambdaIntegration(approvalsLambda));
-    
-    const approvalResource = approvalsResource.addResource('{id}');
-    approvalResource.addMethod('GET', new apigateway.LambdaIntegration(approvalsLambda));
-    approvalResource.addMethod('PUT', new apigateway.LambdaIntegration(approvalsLambda));
+    approvalsResource.addResource('{id}').addMethod('GET', new apigateway.LambdaIntegration(approvalsLambda));
+    approvalsResource.addResource('{id}').addMethod('PUT', new apigateway.LambdaIntegration(approvalsLambda));
 
     // Workflows endpoints
     workflowsResource.addMethod('GET', new apigateway.LambdaIntegration(workflowsLambda));
     workflowsResource.addMethod('POST', new apigateway.LambdaIntegration(workflowsLambda));
-    
-    const workflowResource = workflowsResource.addResource('{id}');
-    workflowResource.addMethod('GET', new apigateway.LambdaIntegration(workflowsLambda));
-    workflowResource.addMethod('PUT', new apigateway.LambdaIntegration(workflowsLambda));
-    workflowResource.addMethod('DELETE', new apigateway.LambdaIntegration(workflowsLambda));
+    workflowsResource.addResource('{id}').addMethod('GET', new apigateway.LambdaIntegration(workflowsLambda));
+    workflowsResource.addResource('{id}').addMethod('PUT', new apigateway.LambdaIntegration(workflowsLambda));
+    workflowsResource.addResource('{id}').addMethod('DELETE', new apigateway.LambdaIntegration(workflowsLambda));
 
-    // ============================================================================
-    // FRONTEND - AWS Amplify (Supports Next.js with dynamic routes)
-    // ============================================================================
-    
-    // Create Amplify app for Next.js deployment
-    const amplifyApp = new amplify.App(this, 'SolutionSharkApp', {
+    // Create AWS Amplify App for Next.js hosting
+    const amplifyApp = new amplify.App(this, 'SolutionSharkAmplifyApp', {
       appName: 'solution-shark-app',
-      description: 'SolutionShark Next.js Application',
-      repository: 'https://github.com/dannypotter-fm/solution-shark-app', // Update with your repo
-      oauthToken: cdk.SecretValue.secretsManager('github-token'), // Store GitHub token in Secrets Manager
+      sourceCodeProvider: new amplify.GitHubSourceCodeProvider({
+        owner: 'dannypotter-fm',
+        repository: 'solution-shark-app',
+        oauthToken: cdk.SecretValue.secretsManager('github-token'),
+      }),
       buildSpec: amplify.BuildSpec.fromObjectToYaml({
-        version: '1.0',
+        version: 1,
         frontend: {
           phases: {
             preBuild: {
-              commands: [
-                'npm ci',
-              ],
+              commands: ['npm ci'],
             },
             build: {
-              commands: [
-                'npm run build',
-              ],
+              commands: ['npm run build'],
             },
           },
           artifacts: {
             baseDirectory: '.next',
-            files: [
-              '**/*',
-            ],
+            files: ['**/*'],
           },
           cache: {
-            paths: [
-              'node_modules/**/*',
-              '.next/cache/**/*',
-            ],
+            paths: ['node_modules/**/*'],
           },
         },
       }),
-      environmentVariables: {
-        API_BASE_URL: api.url,
-        NODE_ENV: 'production',
-      },
     });
 
-    // Add a branch for the main deployment
-    const mainBranch = amplifyApp.addBranch('main', {
-      branchName: 'main',
-      autoBuild: true,
-      environmentVariables: {
-        API_BASE_URL: api.url,
-      },
-    });
-
-    // ============================================================================
-    // SECURITY - WAF (Web Application Firewall)
-    // ============================================================================
-    
-    const waf = new wafv2.CfnWebACL(this, 'SolutionSharkWAF', {
-      name: 'solution-shark-waf',
-      scope: 'REGIONAL', // Changed from CLOUDFRONT to REGIONAL for Amplify
+    // Create WAF for security
+    const wafAcl = new waf.CfnWebACL(this, 'SolutionSharkWAF', {
       defaultAction: { allow: {} },
+      scope: 'REGIONAL',
+      visibilityConfig: {
+        cloudWatchMetricsEnabled: true,
+        metricName: 'SolutionSharkWAFMetrics',
+        sampledRequestsEnabled: true,
+      },
       rules: [
         {
-          name: 'RateLimit',
+          name: 'RateLimitRule',
           priority: 1,
           statement: {
             rateBasedStatement: {
@@ -288,73 +315,43 @@ export class SolutionSharkStack extends cdk.Stack {
           },
           action: { block: {} },
           visibilityConfig: {
-            sampledRequestsEnabled: true,
             cloudWatchMetricsEnabled: true,
             metricName: 'RateLimitRule',
-          },
-        },
-        {
-          name: 'AWSManagedRulesCommonRuleSet',
-          priority: 2,
-          statement: {
-            managedRuleGroupStatement: {
-              vendorName: 'AWS',
-              name: 'AWSManagedRulesCommonRuleSet',
-            },
-          },
-          overrideAction: { none: {} },
-          visibilityConfig: {
             sampledRequestsEnabled: true,
-            cloudWatchMetricsEnabled: true,
-            metricName: 'AWSManagedRulesCommonRuleSet',
           },
         },
       ],
-      visibilityConfig: {
-        sampledRequestsEnabled: true,
-        cloudWatchMetricsEnabled: true,
-        metricName: 'SolutionSharkWAF',
-      },
     });
 
-    // ============================================================================
-    // OUTPUTS
-    // ============================================================================
-    
+    // Outputs
     new cdk.CfnOutput(this, 'ApiGatewayUrl', {
       value: api.url,
       description: 'API Gateway URL',
-      exportName: 'SolutionSharkApiUrl',
+    });
+
+    new cdk.CfnOutput(this, 'DatabaseEndpoint', {
+      value: dbCluster.clusterEndpoint.hostname,
+      description: 'PostgreSQL Database Endpoint',
+    });
+
+    new cdk.CfnOutput(this, 'DatabasePort', {
+      value: dbCluster.clusterEndpoint.port.toString(),
+      description: 'PostgreSQL Database Port',
+    });
+
+    new cdk.CfnOutput(this, 'DatabaseName', {
+      value: 'solution_shark',
+      description: 'PostgreSQL Database Name',
     });
 
     new cdk.CfnOutput(this, 'AmplifyAppUrl', {
-      value: `https://${mainBranch.branchName}.${amplifyApp.appId}.amplifyapp.com`,
+      value: `https://${amplifyApp.defaultDomain}`,
       description: 'Amplify App URL',
-      exportName: 'SolutionSharkAmplifyUrl',
     });
 
     new cdk.CfnOutput(this, 'AmplifyAppId', {
       value: amplifyApp.appId,
       description: 'Amplify App ID',
-      exportName: 'SolutionSharkAmplifyAppId',
-    });
-
-    new cdk.CfnOutput(this, 'SolutionsTableName', {
-      value: solutionsTable.tableName,
-      description: 'DynamoDB Solutions Table Name',
-      exportName: 'SolutionSharkSolutionsTable',
-    });
-
-    new cdk.CfnOutput(this, 'ApprovalsTableName', {
-      value: approvalsTable.tableName,
-      description: 'DynamoDB Approvals Table Name',
-      exportName: 'SolutionSharkApprovalsTable',
-    });
-
-    new cdk.CfnOutput(this, 'WorkflowsTableName', {
-      value: workflowsTable.tableName,
-      description: 'DynamoDB Workflows Table Name',
-      exportName: 'SolutionSharkWorkflowsTable',
     });
   }
 } 

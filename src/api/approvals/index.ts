@@ -1,277 +1,293 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, DeleteCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
-import { logger } from '@aws-lambda-powertools/logger';
+import { queryObjects, querySingle, executeQuery } from '../../database/connection';
 
-const logger = new logger({ serviceName: process.env.POWERTOOLS_SERVICE_NAME || 'approvals-api' });
-
-const ddbClient = new DynamoDBClient({});
-const docClient = DynamoDBDocumentClient.from(ddbClient);
-
-const APPROVALS_TABLE = process.env.APPROVALS_TABLE!;
 const SOLUTIONS_TABLE = process.env.SOLUTIONS_TABLE!;
+const APPROVALS_TABLE = process.env.APPROVALS_TABLE!;
+const WORKFLOWS_TABLE = process.env.WORKFLOWS_TABLE!;
 
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  try {
-    logger.info('Processing request', { 
-      method: event.httpMethod, 
-      path: event.path,
-      resource: event.resource 
-    });
+  const headers = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+  };
 
+  try {
     const { httpMethod, pathParameters, body } = event;
+    const approvalId = pathParameters?.id;
 
     switch (httpMethod) {
       case 'GET':
-        if (pathParameters?.id) {
-          return await getApproval(pathParameters.id);
+        if (approvalId) {
+          return await getApproval(approvalId, headers);
         } else {
-          return await listApprovals();
+          return await getApprovals(headers);
         }
 
       case 'POST':
-        return await createApproval(body);
+        return await createApproval(body, headers);
 
       case 'PUT':
-        if (pathParameters?.id) {
-          return await updateApproval(pathParameters.id, body);
+        if (!approvalId) {
+          return {
+            statusCode: 400,
+            headers,
+            body: JSON.stringify({ error: 'Approval ID is required' }),
+          };
         }
-        break;
+        return await updateApproval(approvalId, body, headers);
+
+      default:
+        return {
+          statusCode: 405,
+          headers,
+          body: JSON.stringify({ error: 'Method not allowed' }),
+        };
     }
-
-    return {
-      statusCode: 400,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-      },
-      body: JSON.stringify({ error: 'Invalid request' }),
-    };
-
   } catch (error) {
-    logger.error('Error processing request', { error });
+    console.error('Error:', error);
     return {
       statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-      },
+      headers,
       body: JSON.stringify({ error: 'Internal server error' }),
     };
   }
 };
 
-async function getApproval(id: string): Promise<APIGatewayProxyResult> {
+async function getApprovals(headers: any): Promise<APIGatewayProxyResult> {
   try {
-    const command = new GetCommand({
-      TableName: APPROVALS_TABLE,
-      Key: { id },
-    });
+    const sql = `
+      SELECT 
+        a.id,
+        a.solution_id,
+        s.name as solution_name,
+        w.name as workflow_name,
+        a.status,
+        a.priority,
+        a.submitted_at,
+        a.processed_at,
+        a.current_step_order,
+        a.total_steps,
+        u.name as requester_name,
+        u.email as requester_email,
+        p.name as processed_by_name
+      FROM approvals a
+      JOIN solutions s ON a.solution_id = s.id
+      JOIN approval_workflows w ON a.workflow_id = w.id
+      JOIN users u ON a.requester_id = u.id
+      LEFT JOIN users p ON a.processed_by = p.id
+      ORDER BY a.submitted_at DESC
+    `;
 
-    const result = await docClient.send(command);
+    const approvals = await queryObjects(sql);
 
-    if (!result.Item) {
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify(approvals),
+    };
+  } catch (error) {
+    console.error('Error getting approvals:', error);
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: 'Failed to get approvals' }),
+    };
+  }
+}
+
+async function getApproval(approvalId: string, headers: any): Promise<APIGatewayProxyResult> {
+  try {
+    const sql = `
+      SELECT 
+        a.*,
+        s.name as solution_name,
+        w.name as workflow_name,
+        u.name as requester_name,
+        u.email as requester_email,
+        p.name as processed_by_name
+      FROM approvals a
+      JOIN solutions s ON a.solution_id = s.id
+      JOIN approval_workflows w ON a.workflow_id = w.id
+      JOIN users u ON a.requester_id = u.id
+      LEFT JOIN users p ON a.processed_by = p.id
+      WHERE a.id = $1
+    `;
+
+    const approval = await querySingle(sql, [approvalId]);
+
+    if (!approval) {
       return {
         statusCode: 404,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
+        headers,
         body: JSON.stringify({ error: 'Approval not found' }),
       };
     }
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-      body: JSON.stringify(result.Item),
+      headers,
+      body: JSON.stringify(approval),
     };
   } catch (error) {
-    logger.error('Error getting approval', { error, id });
-    throw error;
-  }
-}
-
-async function listApprovals(): Promise<APIGatewayProxyResult> {
-  try {
-    const command = new ScanCommand({
-      TableName: APPROVALS_TABLE,
-    });
-
-    const result = await docClient.send(command);
-
+    console.error('Error getting approval:', error);
     return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-      body: JSON.stringify(result.Items || []),
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: 'Failed to get approval' }),
     };
-  } catch (error) {
-    logger.error('Error listing approvals', { error });
-    throw error;
   }
 }
 
-async function createApproval(body: string | null): Promise<APIGatewayProxyResult> {
+async function createApproval(body: string | null, headers: any): Promise<APIGatewayProxyResult> {
   try {
     if (!body) {
       return {
         statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
+        headers,
         body: JSON.stringify({ error: 'Request body is required' }),
       };
     }
 
     const approvalData = JSON.parse(body);
-    // Generate unique ID with timestamp, random string, and process ID to ensure uniqueness
-    // This prevents conflicts when multiple approvals are created simultaneously
-    const timestamp = Date.now()
-    const processId = process.pid || Math.floor(Math.random() * 10000)
-    const randomSuffix = Math.random().toString(36).substr(2, 9)
-    const id = `approval_${timestamp}_${processId}_${randomSuffix}`
-    const now = new Date().toISOString();
+    
+    // Get default admin user for now (in real app, get from auth context)
+    const adminUser = await querySingle('SELECT id FROM users WHERE role = $1 LIMIT 1', ['admin']);
+    
+    // Generate unique ID with timestamp and random string to ensure uniqueness
+    const timestamp = Date.now();
+    const processId = process.pid || Math.floor(Math.random() * 10000);
+    const randomSuffix = Math.random().toString(36).substr(2, 9);
+    const id = `approval_${timestamp}_${processId}_${randomSuffix}`;
 
-    const approval = {
+    const sql = `
+      INSERT INTO approvals (
+        id, solution_id, workflow_id, requester_id, status, priority, 
+        current_step_order, total_steps, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING *
+    `;
+
+    const parameters = [
       id,
-      ...approvalData,
-      submittedAt: now,
-      status: 'pending',
-    };
+      approvalData.solutionId,
+      approvalData.workflowId,
+      adminUser?.id || approvalData.requesterId,
+      approvalData.status || 'pending',
+      approvalData.priority || 'medium',
+      approvalData.currentStepOrder || 1,
+      approvalData.totalSteps || 1,
+      approvalData.notes || '',
+    ];
 
-    const command = new PutCommand({
-      TableName: APPROVALS_TABLE,
-      Item: approval,
-    });
-
-    await docClient.send(command);
+    const newApproval = await querySingle(sql, parameters);
 
     // Update solution stage to 'review' if not already
-    if (approval.solutionId) {
-      await updateSolutionStage(approval.solutionId, 'review');
+    if (approvalData.solutionId) {
+      await executeQuery(
+        'UPDATE solutions SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND stage != $1',
+        ['review', approvalData.solutionId]
+      );
     }
 
     return {
       statusCode: 201,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-      body: JSON.stringify(approval),
+      headers,
+      body: JSON.stringify(newApproval),
     };
   } catch (error) {
-    logger.error('Error creating approval', { error });
-    throw error;
+    console.error('Error creating approval:', error);
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: 'Failed to create approval' }),
+    };
   }
 }
 
-async function updateApproval(id: string, body: string | null): Promise<APIGatewayProxyResult> {
+async function updateApproval(approvalId: string, body: string | null, headers: any): Promise<APIGatewayProxyResult> {
   try {
     if (!body) {
       return {
         statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
+        headers,
         body: JSON.stringify({ error: 'Request body is required' }),
       };
     }
 
     const updateData = JSON.parse(body);
-    const now = new Date().toISOString();
+    
+    // Get default admin user for now (in real app, get from auth context)
+    const adminUser = await querySingle('SELECT id FROM users WHERE role = $1 LIMIT 1', ['admin']);
 
-    // First, get the existing approval
-    const getCommand = new GetCommand({
-      TableName: APPROVALS_TABLE,
-      Key: { id },
-    });
+    const sql = `
+      UPDATE approvals 
+      SET 
+        status = COALESCE($2, status),
+        current_step_order = COALESCE($3, current_step_order),
+        total_steps = COALESCE($4, total_steps),
+        priority = COALESCE($5, priority),
+        notes = COALESCE($6, notes),
+        processed_by = $7,
+        processed_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING *
+    `;
 
-    const existingResult = await docClient.send(getCommand);
+    const parameters = [
+      approvalId,
+      updateData.status,
+      updateData.currentStepOrder,
+      updateData.totalSteps,
+      updateData.priority,
+      updateData.notes,
+      adminUser?.id,
+    ];
 
-    if (!existingResult.Item) {
+    const updatedApproval = await querySingle(sql, parameters);
+
+    if (!updatedApproval) {
       return {
         statusCode: 404,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
+        headers,
         body: JSON.stringify({ error: 'Approval not found' }),
       };
     }
 
-    const updatedApproval = {
-      ...existingResult.Item,
-      ...updateData,
-      processedAt: now,
-    };
-
-    const putCommand = new PutCommand({
-      TableName: APPROVALS_TABLE,
-      Item: updatedApproval,
-    });
-
-    await docClient.send(putCommand);
-
     // Update solution stage based on approval status
-    if (updatedApproval.solutionId && updatedApproval.status) {
-      if (updatedApproval.status === 'approved') {
-        await updateSolutionStage(updatedApproval.solutionId, 'approved');
-      } else if (updatedApproval.status === 'rejected') {
-        await updateSolutionStage(updatedApproval.solutionId, 'draft');
+    if (updateData.status === 'approved') {
+      // Check if all approvals for this solution are approved
+      const allApprovalsApproved = await querySingle(
+        'SELECT COUNT(*) as total, COUNT(CASE WHEN status = $1 THEN 1 END) as approved FROM approvals WHERE solution_id = $2',
+        ['approved', updatedApproval.solution_id]
+      );
+
+      if (allApprovalsApproved && allApprovalsApproved.total === allApprovalsApproved.approved) {
+        await executeQuery(
+          'UPDATE solutions SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+          ['approved', updatedApproval.solution_id]
+        );
       }
+    } else if (updateData.status === 'rejected') {
+      // Reset solution to draft if any approval is rejected
+      await executeQuery(
+        'UPDATE solutions SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        ['draft', updatedApproval.solution_id]
+      );
     }
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
+      headers,
       body: JSON.stringify(updatedApproval),
     };
   } catch (error) {
-    logger.error('Error updating approval', { error, id });
-    throw error;
-  }
-}
-
-async function updateSolutionStage(solutionId: string, stage: string): Promise<void> {
-  try {
-    const getCommand = new GetCommand({
-      TableName: SOLUTIONS_TABLE,
-      Key: { id: solutionId },
-    });
-
-    const existingResult = await docClient.send(getCommand);
-
-    if (existingResult.Item) {
-      const updatedSolution = {
-        ...existingResult.Item,
-        stage,
-        updatedAt: new Date().toISOString(),
-      };
-
-      const putCommand = new PutCommand({
-        TableName: SOLUTIONS_TABLE,
-        Item: updatedSolution,
-      });
-
-      await docClient.send(putCommand);
-    }
-  } catch (error) {
-    logger.error('Error updating solution stage', { error, solutionId, stage });
-    // Don't throw here as this is a side effect
+    console.error('Error updating approval:', error);
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: 'Failed to update approval' }),
+    };
   }
 } 
