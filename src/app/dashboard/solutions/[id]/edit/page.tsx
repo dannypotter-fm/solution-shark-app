@@ -143,7 +143,7 @@ export default function EditSolutionPage() {
     <SidebarProvider>
       <div className="flex h-screen bg-gray-50">
         <AppSidebar />
-        <SidebarInset>
+        <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
           <div className="flex items-center justify-between">
@@ -329,7 +329,7 @@ export default function EditSolutionPage() {
             </Card>
           </div>
         </main>
-        </SidebarInset>
+        </div>
       </div>
     </SidebarProvider>
   )
