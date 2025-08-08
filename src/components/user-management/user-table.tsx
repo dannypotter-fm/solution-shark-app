@@ -159,7 +159,7 @@ export function UserTable({ users, onEditUser, onArchiveUser, onFilterChange, is
                       <Avatar className="h-8 w-8">
                         <AvatarImage src={user.avatar} alt={`${user.firstName} ${user.lastName}`} />
                         <AvatarFallback>
-                          {user.firstName.charAt(0)}{user.lastName.charAt(0)}
+                          {user.firstName?.charAt(0) || ''}{user.lastName?.charAt(0) || ''}
                         </AvatarFallback>
                       </Avatar>
                       <div>
@@ -171,7 +171,7 @@ export function UserTable({ users, onEditUser, onArchiveUser, onFilterChange, is
                   <TableCell>
                     <span className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium ${getRoleBadgeStyle(user.role)}`}>
                       {getRoleIcon(user.role)}
-                      {user.role === "approval_manager" ? "Approval Manager" : user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                      {user.role === "approval_manager" ? "Approval Manager" : user.role?.charAt(0)?.toUpperCase() + user.role?.slice(1) || user.role}
                     </span>
                   </TableCell>
                   <TableCell>

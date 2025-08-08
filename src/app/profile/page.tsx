@@ -195,7 +195,7 @@ export default function ProfilePage() {
                     <Avatar className="h-12 w-12">
                       <AvatarImage src={profile.avatar} alt={`${profile.firstName} ${profile.lastName}`} />
                       <AvatarFallback>
-                        {profile.firstName.charAt(0)}{profile.lastName.charAt(0)}
+                        {profile.firstName?.charAt(0) || ''}{profile.lastName?.charAt(0) || ''}
                       </AvatarFallback>
                     </Avatar>
                     <div>

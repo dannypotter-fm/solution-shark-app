@@ -62,7 +62,7 @@ export function ProfileForm({ profile, onSave, isLoading = false }: ProfileFormP
               <Avatar className="h-20 w-20">
                 <AvatarImage src={avatarPreview} alt={`${formData.firstName} ${formData.lastName}`} />
                 <AvatarFallback className="text-lg">
-                  {formData.firstName.charAt(0)}{formData.lastName.charAt(0)}
+                                          {formData.firstName?.charAt(0) || ''}{formData.lastName?.charAt(0) || ''}
                 </AvatarFallback>
               </Avatar>
               <label htmlFor="avatar-upload" className="absolute -bottom-1 -right-1 cursor-pointer">

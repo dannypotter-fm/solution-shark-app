@@ -31,7 +31,7 @@ const currentUser = {
 }
 
 function ApprovalsContent() {
-  const { approvals, processApproval } = useApprovals()
+  const { approvals } = useApprovals()
   const [filteredApprovals, setFilteredApprovals] = useState<typeof approvals>([])
   const [filterPriority, setFilterPriority] = useState<string>("all")
   const [activeTab, setActiveTab] = useState("pending")
@@ -75,7 +75,11 @@ function ApprovalsContent() {
 
   const handleConfirmAction = async (action: 'approved' | 'rejected', notes: string) => {
     if (selectedApproval) {
-      await processApproval(selectedApproval.id, action, notes)
+      // TODO: Implement approval processing when backend is ready
+      console.log('Processing approval:', selectedApproval.id, action, notes)
+      setModalOpen(false)
+      setSelectedApproval(null)
+      setModalAction(null)
     }
   }
 
@@ -101,7 +105,7 @@ function ApprovalsContent() {
 
     return (
       <Badge variant={variants[priority as keyof typeof variants] || "secondary"}>
-        {priority.charAt(0).toUpperCase() + priority.slice(1)}
+        {priority?.charAt(0)?.toUpperCase() + priority?.slice(1) || priority}
       </Badge>
     )
   }
@@ -188,7 +192,7 @@ function ApprovalsContent() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     {getStatusIcon(activeTab)}
-                    {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Approvals
+                    {activeTab?.charAt(0)?.toUpperCase() + activeTab?.slice(1) || activeTab} Approvals
                   </CardTitle>
                   <CardDescription>
                     {filteredApprovals.length} approval{filteredApprovals.length !== 1 ? 's' : ''} found

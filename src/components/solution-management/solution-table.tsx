@@ -143,7 +143,7 @@ export function SolutionTable({ solutions, onArchive, filters, onFilterChange }:
                     <TableCell>
                       <Badge variant="outline" className="flex items-center gap-1">
                         <span>{getStatusIcon(solution.status)}</span>
-                        {solution.status.charAt(0).toUpperCase() + solution.status.slice(1)}
+                        {solution.status?.charAt(0)?.toUpperCase() + solution.status?.slice(1) || solution.status}
                       </Badge>
                     </TableCell>
                     <TableCell>{solution.createdAt.toLocaleDateString()}</TableCell>
