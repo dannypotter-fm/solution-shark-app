@@ -91,7 +91,7 @@ const mockSolutions: Solution[] = [
   }
 ]
 
-function SolutionsContent(): JSX.Element {
+function SolutionsContent(): React.JSX.Element {
   const { solutions: contextSolutions, createSolution } = useApprovals()
   const [filteredSolutions, setFilteredSolutions] = useState<Solution[]>([])
   const [filters, setFilters] = useState<SolutionFilters>({
@@ -205,6 +205,6 @@ function SolutionsContent(): JSX.Element {
   )
 }
 
-export default function SolutionsPage(): JSX.Element {
+export default function SolutionsPage(): React.JSX.Element {
   return <SolutionsContent />
 }

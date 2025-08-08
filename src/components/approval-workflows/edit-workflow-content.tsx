@@ -148,15 +148,13 @@ const mockWorkflow: ApprovalWorkflow = {
       id: "rule_1",
       name: "Sequential Processing",
       type: "sequential",
-      description: "Steps must be completed in order",
-      order: 1
+      description: "Steps must be completed in order"
     },
     {
       id: "rule_2",
       name: "Parallel Reviews",
       type: "parallel",
-      description: "Technical and business reviews can happen simultaneously",
-      order: 2
+      description: "Technical and business reviews can happen simultaneously"
     }
   ],
   conditionRules: [
@@ -164,13 +162,15 @@ const mockWorkflow: ApprovalWorkflow = {
       id: "condition_1",
       field: "budget",
       operator: "greater_than",
-      value: "100000"
+      value: "100000",
+      order: 1
     },
     {
       id: "condition_2",
       field: "solutionType",
       operator: "equals",
-      value: "enterprise"
+      value: "enterprise",
+      order: 2
     }
   ],
   notifications: ["email", "in_app"],

@@ -144,7 +144,7 @@ function SortableStep({ step, onRemove }: { step: ApprovalStep; onRemove: (stepI
 
 export function CreateWorkflowContent() {
   const router = useRouter()
-  const { addWorkflow } = useWorkflows()
+  const { createWorkflow } = useWorkflows()
   
   // Drag and drop sensors
   const sensors = useSensors(
@@ -268,8 +268,7 @@ export function CreateWorkflowContent() {
       id: `rule_${Date.now()}`,
       name: currentRule.name,
       type: currentRule.type as ApprovalRuleType,
-      description: currentRule.description || "",
-      order: (workflow.rules?.length || 0) + 1
+      description: currentRule.description || ""
     }
     
     setWorkflow(prev => ({
@@ -310,7 +309,8 @@ export function CreateWorkflowContent() {
       id: `condition_${Date.now()}`,
       field: newConditionRule.field,
       operator: newConditionRule.operator as 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than',
-      value: newConditionRule.value
+      value: newConditionRule.value,
+      order: (workflow.conditionRules?.length || 0) + 1
     }
     
     setWorkflow(prev => ({
@@ -353,7 +353,7 @@ export function CreateWorkflowContent() {
       createdDate: new Date(),
       updatedDate: new Date()
     }
-    addWorkflow(newWorkflow)
+    await createWorkflow(newWorkflow)
     router.push("/dashboard/approval-workflows")
   }
 
