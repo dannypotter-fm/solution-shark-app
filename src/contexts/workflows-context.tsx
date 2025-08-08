@@ -1,205 +1,153 @@
-"use client"
+'use client'
 
-import React, { createContext, useContext, useState, ReactNode } from "react"
-import { ApprovalWorkflow } from "@/types/approval"
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { ApprovalWorkflow } from '@/types/approval'
 
 interface WorkflowsContextType {
   workflows: ApprovalWorkflow[]
-  addWorkflow: (workflow: ApprovalWorkflow) => void
-  updateWorkflow: (id: string, workflow: ApprovalWorkflow) => void
-  deleteWorkflow: (id: string) => void
+  createWorkflow: (workflowData: Partial<ApprovalWorkflow>) => Promise<ApprovalWorkflow>
+  updateWorkflow: (id: string, updateData: Partial<ApprovalWorkflow>) => Promise<void>
+  deleteWorkflow: (id: string) => Promise<void>
   getWorkflow: (id: string) => ApprovalWorkflow | undefined
+  clearWorkflows: () => void
+  loading: boolean
+  error: string | null
 }
 
 const WorkflowsContext = createContext<WorkflowsContextType | undefined>(undefined)
 
-// Initial mock data
-const initialWorkflows: ApprovalWorkflow[] = [
-  {
-    id: "1",
-    name: "Enterprise Solution Approval",
-    description: "Standard approval workflow for enterprise-level solutions",
-    isActive: true,
-    isArchived: false,
-    isRequired: true,
-    steps: [
-      {
-        id: "step1",
-        name: "Technical Review",
-        type: "technical_review",
-        description: "Technical feasibility assessment",
-        order: 1,
-        isRequired: true,
-        assignedApprovers: ["user1"],
-        requireAllApprovers: true
-      },
-      {
-        id: "step2",
-        name: "Business Review",
-        type: "business_review",
-        description: "Business value and ROI assessment",
-        order: 2,
-        isRequired: true,
-        assignedApprovers: ["user2"],
-        requireAllApprovers: false
-      },
-      {
-        id: "step3",
-        name: "Legal Review",
-        type: "legal_review",
-        description: "Legal and compliance review",
-        order: 3,
-        isRequired: true,
-        assignedApprovers: ["user3"],
-        requireAllApprovers: true
-      },
-      {
-        id: "step4",
-        name: "Final Approval",
-        type: "approve",
-        description: "Final executive approval",
-        order: 4,
-        isRequired: true,
-        assignedApprovers: ["user4"],
-        requireAllApprovers: true
-      }
-    ],
-    rules: [
-      {
-        id: "rule1",
-        name: "Sequential Approval",
-        type: "sequential",
-        description: "Approvals must be completed in order"
-      }
-    ],
-    conditionRules: [
-      {
-        id: "rule1",
-        field: "projectType",
-        operator: "equals",
-        value: "Implementation",
-        order: 1
-      },
-      {
-        id: "rule2",
-        field: "budget",
-        operator: "greater_than",
-        value: "10000",
-        order: 2
-      }
-    ],
-    notifications: ["email", "in_app"],
-    createdBy: "John Doe",
-    createdDate: new Date("2024-01-15"),
-    updatedDate: new Date("2024-01-20")
-  },
-  {
-    id: "2",
-    name: "Quick Solution Approval",
-    description: "Fast-track approval for simple solutions",
-    isActive: true,
-    isArchived: false,
-    isRequired: false,
-    steps: [
-      {
-        id: "step1",
-        name: "Quick Review",
-        type: "review",
-        description: "Rapid technical and business review",
-        order: 1,
-        isRequired: true,
-        assignedApprovers: ["user1"],
-        requireAllApprovers: false
-      },
-      {
-        id: "step2",
-        name: "Manager Approval",
-        type: "approve",
-        description: "Manager sign-off",
-        order: 2,
-        isRequired: true,
-        assignedApprovers: ["user2"],
-        requireAllApprovers: true
-      }
-    ],
-    rules: [
-      {
-        id: "rule1",
-        name: "Parallel Review",
-        type: "parallel",
-        description: "Reviews can happen simultaneously"
-      }
-    ],
-    conditionRules: [],
-    notifications: ["email", "in_app"],
-            createdBy: "John Doe",
-    createdDate: new Date("2024-01-10"),
-    updatedDate: new Date("2024-01-18")
-  },
-  {
-    id: "3",
-    name: "Legacy Approval Process",
-    description: "Deprecated approval workflow",
-    isActive: false,
-    isArchived: true,
-    isRequired: false,
-    steps: [
-      {
-        id: "step1",
-        name: "Initial Review",
-        type: "review",
-        description: "Initial assessment",
-        order: 1,
-        isRequired: true,
-        assignedApprovers: ["user1"],
-        requireAllApprovers: false
-      }
-    ],
-    rules: [
-      {
-        id: "rule1",
-        name: "Single Approval",
-        type: "any_one",
-        description: "Any one approver can approve"
-      }
-    ],
-    conditionRules: [],
-    notifications: ["email"],
-            createdBy: "John Doe",
-    createdDate: new Date("2023-12-01"),
-    updatedDate: new Date("2024-01-05")
-  }
-]
+interface WorkflowsProviderProps {
+  children: ReactNode
+}
 
-export function WorkflowsProvider({ children }: { children: ReactNode }) {
-  const [workflows, setWorkflows] = useState<ApprovalWorkflow[]>(initialWorkflows)
+import { API_CONFIG } from '@/lib/config'
 
-  const addWorkflow = (workflow: ApprovalWorkflow) => {
-    setWorkflows(prev => [...prev, workflow])
+export function WorkflowsProvider({ children }: WorkflowsProviderProps) {
+  const [workflows, setWorkflows] = useState<ApprovalWorkflow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch workflows from API
+  const fetchWorkflows = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch(`${API_CONFIG.BASE_URL}/workflows`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch workflows: ${response.statusText}`)
+      }
+      const data = await response.json()
+      setWorkflows(data)
+    } catch (err) {
+      console.error('Error fetching workflows:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch workflows')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const updateWorkflow = (id: string, updatedWorkflow: ApprovalWorkflow) => {
-    setWorkflows(prev => prev.map(workflow => 
-      workflow.id === id ? updatedWorkflow : workflow
-    ))
+  // Create workflow via API
+  const createWorkflow = async (workflowData: Partial<ApprovalWorkflow>): Promise<ApprovalWorkflow> => {
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}/workflows`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(workflowData),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to create workflow: ${response.statusText}`)
+      }
+
+      const newWorkflow = await response.json()
+      
+      // Update local state
+      setWorkflows(prev => [...prev, newWorkflow])
+      
+      return newWorkflow
+    } catch (err) {
+      console.error('Error creating workflow:', err)
+      setError(err instanceof Error ? err.message : 'Failed to create workflow')
+      throw err
+    }
   }
 
-  const deleteWorkflow = (id: string) => {
-    setWorkflows(prev => prev.filter(workflow => workflow.id !== id))
+  // Update workflow via API
+  const updateWorkflow = async (id: string, updateData: Partial<ApprovalWorkflow>): Promise<void> => {
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}/workflows/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateData),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to update workflow: ${response.statusText}`)
+      }
+
+      const updatedWorkflow = await response.json()
+      
+      // Update local state
+      setWorkflows(prev => prev.map(w => w.id === id ? updatedWorkflow : w))
+    } catch (err) {
+      console.error('Error updating workflow:', err)
+      setError(err instanceof Error ? err.message : 'Failed to update workflow')
+      throw err
+    }
   }
 
-  const getWorkflow = (id: string) => {
-    return workflows.find(workflow => workflow.id === id)
+  // Delete workflow via API
+  const deleteWorkflow = async (id: string): Promise<void> => {
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}/workflows/${id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete workflow: ${response.statusText}`)
+      }
+
+      // Update local state
+      setWorkflows(prev => prev.filter(w => w.id !== id))
+    } catch (err) {
+      console.error('Error deleting workflow:', err)
+      setError(err instanceof Error ? err.message : 'Failed to delete workflow')
+      throw err
+    }
+  }
+
+  // Get workflow by ID
+  const getWorkflow = (id: string): ApprovalWorkflow | undefined => {
+    return workflows.find(w => w.id === id)
+  }
+
+  // Clear all workflows
+  const clearWorkflows = () => {
+    setWorkflows([])
+    setError(null)
+  }
+
+  // Initialize data on mount
+  useEffect(() => {
+    fetchWorkflows()
+  }, [])
+
+  const value: WorkflowsContextType = {
+    workflows,
+    createWorkflow,
+    updateWorkflow,
+    deleteWorkflow,
+    getWorkflow,
+    clearWorkflows,
+    loading,
+    error,
   }
 
   return (
-    <WorkflowsContext.Provider value={{
-      workflows,
-      addWorkflow,
-      updateWorkflow,
-      deleteWorkflow,
-      getWorkflow
-    }}>
+    <WorkflowsContext.Provider value={value}>
       {children}
     </WorkflowsContext.Provider>
   )

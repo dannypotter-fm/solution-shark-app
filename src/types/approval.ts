@@ -20,6 +20,9 @@ export type NotificationType =
   | "sms"
   | "in_app"
 
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
+export type ApprovalPriority = 'low' | 'medium' | 'high'
+
 export interface ApprovalStep {
   id: string
   name: string
@@ -70,4 +73,41 @@ export interface ApprovalWorkflowFilters {
   isArchived?: boolean
   isRequired?: boolean
   createdBy?: string
+}
+
+export interface Approval {
+  id: string
+  solutionId: string
+  solutionName: string
+  workflowId: string
+  workflowName: string
+  requesterName: string
+  requesterEmail: string
+  submittedAt: Date
+  status: ApprovalStatus
+  currentStep: string
+  stepOrder: number
+  totalSteps: number
+  assignedApprovers: string[]
+  isAssignedToCurrentUser: boolean
+  priority: ApprovalPriority
+  estimatedValue: number
+  currency: string
+  notes?: string
+  processedAt?: Date
+  processedBy?: string
+}
+
+export interface ApprovalHistory {
+  id: string
+  workflowId: string
+  workflowName: string
+  status: ApprovalStatus
+  submittedAt: Date
+  submittedBy: string
+  processedAt?: Date
+  processedBy?: string
+  notes?: string
+  currentStep?: string
+  stepOrder?: number
 } 
