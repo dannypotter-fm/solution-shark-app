@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import {
   Sidebar,
   SidebarContent,
@@ -269,6 +269,7 @@ export function AppSidebar({ className, ...props }: AppSidebarProps) {
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="w-72">
+          <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
           <AppSidebarContent />
         </SheetContent>
       </Sheet>
